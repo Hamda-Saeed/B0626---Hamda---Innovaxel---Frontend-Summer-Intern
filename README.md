@@ -1,5 +1,11 @@
 # ExpenseLog — Personal Expense Tracking Service
 
+## 🚀 Live Demo
+
+Experience the deployed application here:
+
+[View ExpenseLog Application](https://b0626-hamda-innovaxel-frontend-summ.vercel.app)
+
 <p align="center">
   <img src="./assests/expense-log-cover.png" alt="ExpenseLog Dashboard Preview" width="900"/>
 </p>
