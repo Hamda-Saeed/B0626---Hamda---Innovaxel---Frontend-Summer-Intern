@@ -58,7 +58,25 @@ Remove unwanted records with confirmation.
 
 
 ---
+# 📸 Application Screenshots
 
+## Dashboard Overview
+
+<p align="center">
+  <img src="./assests/image1.png" alt="ExpenseLog Dashboard" width="900"/>
+</p>
+
+## Expense Management
+
+<p align="center">
+  <img src="./assests/image2.png" alt="Expense Management Section" width="900"/>
+</p>
+
+## Analytics & Reports
+
+<p align="center">
+  <img src="./assests/image3.png" alt="Expense Analytics and Reports" width="900"/>
+</p>
 # 📊 Dashboard & Analytics
 
 ## Spending Summary
