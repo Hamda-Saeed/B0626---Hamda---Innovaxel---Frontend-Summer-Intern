@@ -1,0 +1,1145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ExpenseLog — Personal Expense Tracker</title>
+<meta name="description" content="A quiet, neumorphic personal expense tracker with category breakdowns and a clean monthly summary." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+
+
+
+:root {
+  --radius: 0.875rem;
+  --bg: #F5F4F1;
+  --background: #F5F4F1;
+  --surface: #FFFFFF;
+  --border: #D9D7D0;
+  --border-soft: #ECEAE4;
+  --primary: #1C1C1A;
+  --foreground: #1C1C1A;
+  --secondary: #6B6A65;
+  --hint: #A8A6A0;
+  --accent: #3D6B5E;
+  --accent-light: #EAF2EF;
+  --danger: #B85C4A;
+  --danger-light: #F7EFED;
+  --nm-light: rgba(255, 255, 255, 0.85);
+  --nm-dark: rgba(170, 160, 140, 0.28);
+}
+
+select.bare { -webkit-appearance: none; -moz-appearance: none; appearance: none; background: transparent; border: 0; outline: none; cursor: pointer; padding-right: 4px; }
+
+html, body {
+  background: var(--bg);
+  color: var(--primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.neu       { background: var(--bg); box-shadow: 8px 8px 20px var(--nm-dark), -8px -8px 20px var(--nm-light); }
+.neu-soft  { background: var(--bg); box-shadow: 5px 5px 12px var(--nm-dark), -5px -5px 12px var(--nm-light); }
+.neu-inset { background: var(--bg); box-shadow: inset 4px 4px 10px var(--nm-dark), inset -4px -4px 10px var(--nm-light); }
+.neu-pill  { background: var(--bg); box-shadow: inset 3px 3px 7px var(--nm-dark), inset -3px -3px 7px var(--nm-light); }
+.neu-dark  { background: #1F1F1D; box-shadow: 6px 6px 16px var(--nm-dark), -4px -4px 14px var(--nm-light); }
+
+.icon-tap { transition: transform .15s ease, color .15s ease; }
+.icon-tap:hover { color: var(--primary); transform: translateY(-1px); }
+
+.field { height: 42px; border-radius: 12px; padding: 0 14px; background: var(--bg);
+  box-shadow: inset 3px 3px 7px var(--nm-dark), inset -3px -3px 7px var(--nm-light);
+  transition: box-shadow .15s ease; outline: none; width: 100%; font-size: 14px; }
+.field:focus, .field:focus-within {
+  box-shadow: inset 3px 3px 7px var(--nm-dark), inset -3px -3px 7px var(--nm-light), 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+textarea.field { height: auto; padding: 10px 14px; }
+
+.nav-item { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; border-radius: 12px; color: #A8A6A0; transition: all .2s ease; background: transparent; border: 0; cursor: pointer; }
+.nav-item:hover { color: #fff; }
+.nav-item.active { background: var(--bg); color: #1F1F1D; box-shadow: inset 2px 2px 5px rgba(0,0,0,0.18), inset -2px -2px 5px rgba(255,255,255,0.06); }
+.nav-item.nav-danger:hover { color: #E2867A; }
+
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; background: transparent; color: var(--secondary); font-size: 15px; transition: background .15s, color .15s; border: 0; cursor: pointer; }
+.icon-btn.edit:hover { background: var(--accent-light); color: var(--accent); }
+.icon-btn.del:hover { background: var(--danger-light); color: var(--danger); }
+
+.sec-dash { display:block; width: 22px; height: 2px; background: var(--hint); opacity: .45; border-radius: 2px; transition: all .2s ease; cursor: pointer; border: 0; padding: 0; }
+.sec-dash:hover { opacity: .9; width: 28px; }
+.sec-dash.active { background: var(--primary); opacity: 1; width: 32px; height: 3px; }
+
+input, select, textarea { background: transparent; outline: none; color: inherit; }
+
+
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/plain" id="src-tsx">
+
+const { useState, useEffect, useMemo, useRef } = React;
+const ChartJS = window.Chart;
+const { ArcElement, Tooltip, Legend, CategoryScale, LinearScale, LineElement, PointElement, Filler } = ChartJS;
+function makeChart(type) {
+  return function ChartWrap(props) {
+    const ref = useRef(null);
+    const inst = useRef(null);
+    useEffect(() => {
+      inst.current = new ChartJS(ref.current, { type, data: props.data, options: props.options || {} });
+      return () => { if (inst.current) { inst.current.destroy(); inst.current = null; } };
+    }, []);
+    useEffect(() => {
+      if (!inst.current) return;
+      inst.current.data = props.data;
+      inst.current.options = props.options || {};
+      inst.current.update('none');
+    });
+    return React.createElement('canvas', { ref });
+  };
+}
+const Doughnut = makeChart('doughnut');
+const Line = makeChart('line');
+
+ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, LineElement, PointElement, Filler);
+
+type Cat =
+  | "Food"
+  | "Transport"
+  | "Utilities"
+  | "Health"
+  | "Entertainment"
+  | "Shopping"
+  | "Education"
+  | "Other";
+
+interface Expense {
+  id: string;
+  title: string;
+  amount: number;
+  category: Cat;
+  date: string; // yyyy-mm-dd
+  notes?: string;
+}
+
+const CATS: Cat[] = [
+  "Food",
+  "Transport",
+  "Utilities",
+  "Health",
+  "Entertainment",
+  "Shopping",
+  "Education",
+  "Other",
+];
+
+const CAT_META: Record<Cat, { icon: string; color: string }> = {
+  Food:           { icon: "🍜", color: "#3D6B5E" },
+  Transport:      { icon: "🚌", color: "#B85C4A" },
+  Utilities:      { icon: "💡", color: "#C9A24C" },
+  Health:         { icon: "✚",  color: "#6E8AAF" },
+  Entertainment:  { icon: "🎬", color: "#9B6BAA" },
+  Shopping:       { icon: "🛍", color: "#D08F6B" },
+  Education:      { icon: "📚", color: "#5B8FA8" },
+  Other:          { icon: "•",  color: "#8A867D" },
+};
+
+const QUOTES = [
+  "Small leaks sink great ships — every coin counts.",
+  "Wealth is the quiet sum of patient choices.",
+  "Spend on what you'll remember in a year.",
+  "Manifesting calm finances, one entry at a time.",
+  "A budget is freedom in disguise.",
+];
+
+const STORE = "expenselog.v1";
+const SET_STORE = "expenselog.settings.v1";
+
+interface Settings {
+  currency: string;
+  darkAccent: boolean;
+  monthlyLimit: number | null;
+}
+
+function load(): Expense[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(STORE) || "[]"); } catch { return []; }
+}
+function save(list: Expense[]) { localStorage.setItem(STORE, JSON.stringify(list)); }
+function loadSet(): Settings {
+  const def = { currency: "PKR", darkAccent: false, monthlyLimit: null };
+  if (typeof window === "undefined") return def;
+  try { return { ...def, ...JSON.parse(localStorage.getItem(SET_STORE) || "{}") }; }
+  catch { return def; }
+}
+function saveSet(s: Settings) { localStorage.setItem(SET_STORE, JSON.stringify(s)); }
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+const SECTIONS = [
+  { id: "sec-form",     label: "Add Expense" },
+  { id: "sec-cats",     label: "Categories" },
+  { id: "sec-month",    label: "This Month" },
+  { id: "sec-chart",    label: "Chart" },
+  { id: "sec-list",     label: "Expense List" },
+  { id: "sec-year",     label: "Yearly Summary" },
+];
+
+type RangePreset = "week" | "month" | "year" | "all";
+const RANGE_PRESETS: { id: RangePreset; label: string }[] = [
+  { id: "week",  label: "This Week" },
+  { id: "month", label: "This Month" },
+  { id: "year",  label: "This Year" },
+  { id: "all",   label: "All Time" },
+];
+
+function presetRange(p: RangePreset): { from: string; to: string } {
+  const today = new Date();
+  const to = today.toISOString().slice(0, 10);
+  if (p === "all") return { from: "", to: "" };
+  if (p === "week") {
+    const d = new Date(today);
+    const dow = (d.getDay() + 6) % 7; // Monday=0
+    d.setDate(d.getDate() - dow);
+    return { from: d.toISOString().slice(0,10), to };
+  }
+  if (p === "month") {
+    const d = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { from: d.toISOString().slice(0,10), to };
+  }
+  // year
+  const d = new Date(today.getFullYear(), 0, 1);
+  return { from: d.toISOString().slice(0,10), to };
+}
+
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+type QuarterTab = "Q1" | "Q2" | "Q3" | "Q4" | "All";
+const QUARTERS: { id: QuarterTab; months: number[] }[] = [
+  { id: "All", months: [0,1,2,3,4,5,6,7,8,9,10,11] },
+  { id: "Q1",  months: [0,1,2] },
+  { id: "Q2",  months: [3,4,5] },
+  { id: "Q3",  months: [6,7,8] },
+  { id: "Q4",  months: [9,10,11] },
+];
+
+function Page() {
+  const [items, setItems] = useState<Expense[]>([]);
+  const [settings, setSettings] = useState<Settings>({ currency: "PKR", darkAccent: false, monthlyLimit: null });
+  const [hydrated, setHydrated] = useState(false);
+
+  // form
+  const [fId, setFId] = useState<string | null>(null);
+  const [fTitle, setFTitle] = useState("");
+  const [fAmount, setFAmount] = useState("");
+  const [fCategory, setFCategory] = useState<Cat | "">("");
+  const [fDate, setFDate] = useState(todayStr());
+  const [fNotes, setFNotes] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // filters
+  const [search, setSearch] = useState("");
+  const [rangePreset, setRangePreset] = useState<RangePreset | "custom">("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [showCustomRange, setShowCustomRange] = useState(false);
+  const [filterCat, setFilterCat] = useState<Cat | "">("");
+
+  // yearly summary tab
+  const [quarterTab, setQuarterTab] = useState<QuarterTab>("All");
+
+  // panels
+  const [openPanel, setOpenPanel] = useState<null | "settings" | "notifications">(null);
+  const [activeSection, setActiveSection] = useState("sec-form");
+  const [atTop, setAtTop] = useState(true);
+  const [settingsErrors, setSettingsErrors] = useState<Record<string,string>>({});
+  const [toast, setToast] = useState("");
+  const [quote] = useState(() => QUOTES[Math.floor(Math.random() * QUOTES.length)]);
+
+  useEffect(() => {
+    setItems(load());
+    setSettings(loadSet());
+    setHydrated(true);
+  }, []);
+  useEffect(() => { if (hydrated) save(items); }, [items, hydrated]);
+  useEffect(() => { if (hydrated) saveSet(settings); }, [settings, hydrated]);
+
+  useEffect(() => {
+    const getFirstSectionTop = () => {
+      const el = document.getElementById(SECTIONS[0].id);
+      return el ? el.getBoundingClientRect().top + window.scrollY : 120;
+    };
+    const onScroll = () => {
+      const trigger = window.innerHeight * 0.35;
+      const firstEl = document.getElementById(SECTIONS[0].id);
+      const firstTop = firstEl ? firstEl.getBoundingClientRect().top : Infinity;
+      setAtTop(firstTop > trigger);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // scroll spy — stable: picks whichever section top is closest above the 35% viewport mark
+  useEffect(() => {
+    let rafId: number;
+    const onScroll = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const trigger = window.innerHeight * 0.35;
+        let best = SECTIONS[0].id;
+        let bestDist = Infinity;
+        SECTIONS.forEach(s => {
+          const el = document.getElementById(s.id);
+          if (!el) return;
+          const top = el.getBoundingClientRect().top;
+          // distance of section top above the trigger line (positive = above trigger)
+          const dist = trigger - top;
+          if (dist >= 0 && dist < bestDist) {
+            bestDist = dist;
+            best = s.id;
+          }
+        });
+        setActiveSection(best);
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll(); // run once on mount
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(rafId);
+    };
+  }, [hydrated]);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 2200);
+  }
+
+  function resetForm() {
+    setFId(null); setFTitle(""); setFAmount(""); setFCategory(""); setFDate(todayStr()); setFNotes(""); setErrors({});
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const errs: Record<string,string> = {};
+    if (!fTitle.trim()) errs.title = "Title is required";
+    else if (fTitle.trim().length > 80) errs.title = "Keep title under 80 characters";
+    const amt = parseFloat(fAmount);
+    if (!fAmount.trim()) errs.amount = "Amount is required";
+    else if (isNaN(amt)) errs.amount = "Enter a valid number";
+    else if (amt <= 0) errs.amount = "Amount must be greater than 0";
+    else if (amt > 1_000_000_000) errs.amount = "Amount looks too large";
+    if (!fCategory) errs.category = "Choose a category";
+    if (!fDate) errs.date = "Date is required";
+    else if (isNaN(new Date(fDate).getTime())) errs.date = "Enter a valid date";
+    if (fNotes && fNotes.length > 300) errs.notes = "Notes must be under 300 characters";
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
+
+    const entry: Expense = {
+      id: fId || uid(),
+      title: fTitle.trim(),
+      amount: Math.round(amt * 100) / 100,
+      category: fCategory as Cat,
+      date: fDate,
+      notes: fNotes.trim() || undefined,
+    };
+    if (fId) {
+      setItems(prev => prev.map(it => it.id === fId ? entry : it));
+      showToast("Expense updated");
+    } else {
+      setItems(prev => [entry, ...prev]);
+      showToast("Expense added");
+    }
+    resetForm();
+  }
+
+  function editItem(it: Expense) {
+    setFId(it.id); setFTitle(it.title); setFAmount(String(it.amount));
+    setFCategory(it.category); setFDate(it.date); setFNotes(it.notes || ""); setErrors({});
+    document.getElementById("sec-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function delItem(id: string) {
+    if (!confirm("Delete this expense?")) return;
+    setItems(prev => prev.filter(it => it.id !== id));
+    if (fId === id) resetForm();
+    showToast("Expense deleted");
+  }
+
+  function applyPreset(p: RangePreset) {
+    setRangePreset(p);
+    const r = presetRange(p);
+    setFromDate(r.from); setToDate(r.to);
+    setShowCustomRange(false);
+  }
+
+  function applyCustom(from: string, to: string) {
+    setFromDate(from); setToDate(to);
+    setRangePreset("custom");
+  }
+
+  // items filtered by date range (used for list, category breakdown & chart)
+  const rangeFiltered = useMemo(() => {
+    return items.filter(it => {
+      if (fromDate && it.date < fromDate) return false;
+      if (toDate && it.date > toDate) return false;
+      return true;
+    });
+  }, [items, fromDate, toDate]);
+
+  // additionally filter by search + category for the list
+  const filtered = useMemo(() => {
+    return rangeFiltered
+      .filter(it => {
+        if (search && !(`${it.title} ${it.notes || ""}`.toLowerCase().includes(search.toLowerCase()))) return false;
+        if (filterCat && it.category !== filterCat) return false;
+        return true;
+      })
+      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  }, [rangeFiltered, search, filterCat]);
+
+  const total = useMemo(() => rangeFiltered.reduce((s, i) => s + i.amount, 0), [rangeFiltered]);
+
+  // category aggregation (range-aware)
+  const byCat = useMemo(() => {
+    const m: Record<string, { total: number; count: number }> = {};
+    CATS.forEach(c => (m[c] = { total: 0, count: 0 }));
+    rangeFiltered.forEach(i => { m[i.category].total += i.amount; m[i.category].count += 1; });
+    return m;
+  }, [rangeFiltered]);
+
+  // this month (always current month, independent of filter)
+  const monthInfo = useMemo(() => {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const pym = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`;
+    const cur = items.filter(i => i.date.startsWith(ym));
+    const prevList = items.filter(i => i.date.startsWith(pym));
+    const curTotal = cur.reduce((s,i)=>s+i.amount,0);
+    const prevTotal = prevList.reduce((s,i)=>s+i.amount,0);
+    const diff = prevTotal === 0 ? null : ((curTotal - prevTotal) / prevTotal) * 100;
+    return {
+      label: now.toLocaleString(undefined,{month:"long", year:"numeric"}),
+      total: curTotal,
+      count: cur.length,
+      prevTotal, diff,
+    };
+  }, [items]);
+
+  // monthly trend across last 12 months (for line chart)
+  const monthlyTrend = useMemo(() => {
+    const now = new Date();
+    const labels: string[] = [];
+    const data: number[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      labels.push(MONTH_NAMES[d.getMonth()]);
+      data.push(items.filter(it => it.date.startsWith(ym)).reduce((s,it)=>s+it.amount, 0));
+    }
+    return { labels, data };
+  }, [items]);
+
+  // yearly summary (current year, 12 months)
+  const yearSummary = useMemo<Array<{name:string; idx:number; total:number; count:number; topCat: Cat | null}>>(() => {
+    const year = new Date().getFullYear();
+    return MONTH_NAMES.map((name, idx) => {
+      const ym = `${year}-${String(idx+1).padStart(2,"0")}`;
+      const monthItems = items.filter(it => it.date.startsWith(ym));
+      const totalM = monthItems.reduce((s,it)=>s+it.amount, 0);
+      const catTotals: Record<string, number> = {};
+      monthItems.forEach(it => { catTotals[it.category] = (catTotals[it.category]||0) + it.amount; });
+      let topCat: Cat | null = null; let topVal = 0;
+      Object.entries(catTotals).forEach(([c,v]) => { if (v > topVal) { topVal = v; topCat = c as Cat; } });
+      return { name, idx, total: totalM, count: monthItems.length, topCat };
+    });
+  }, [items]);
+
+  const overLimit = settings.monthlyLimit != null && monthInfo.total > settings.monthlyLimit;
+
+  const cur = (n: number) => `${settings.currency}${n.toFixed(2)}`;
+
+  const donutCats = useMemo(() => CATS.filter(c => byCat[c].total > 0), [byCat]);
+  const donutData = useMemo(() => ({
+    labels: donutCats,
+    datasets: [{
+      data: donutCats.map(c => byCat[c].total),
+      backgroundColor: donutCats.map(c => CAT_META[c].color),
+      borderColor: "#F5F4F1",
+      borderWidth: 4,
+      hoverOffset: 6,
+    }],
+  }), [donutCats, byCat]);
+
+  const trendData = useMemo(() => ({
+    labels: monthlyTrend.labels,
+    datasets: [{
+      label: "Monthly spend",
+      data: monthlyTrend.data,
+      borderColor: "#3D6B5E",
+      backgroundColor: "rgba(61,107,94,0.12)",
+      tension: 0.4,
+      fill: true,
+      pointRadius: 3,
+      pointBackgroundColor: "#3D6B5E",
+      borderWidth: 2,
+    }],
+  }), [monthlyTrend]);
+
+  const donutOptions = useMemo(() => ({
+    cutout: "68%",
+    plugins: {
+      legend: { position: "bottom" as const, labels: { color: "#6B6A65", boxWidth: 10, padding: 14, font: { size: 12 } } },
+      tooltip: { callbacks: { label: (c: any) => ` ${c.label}: ${settings.currency}${(c.parsed as number).toFixed(2)}` } },
+    },
+    maintainAspectRatio: false,
+  }), [settings.currency]);
+
+  const trendOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (c: any) => ` ${settings.currency}${(c.parsed.y as number).toFixed(2)}` } },
+    },
+    scales: {
+      x: { display: true, grid: { display: false }, ticks: { color: "#8A867D", font: { size: 10 } } },
+      y: { display: false, beginAtZero: true },
+    },
+    elements: { line: { borderJoinStyle: "round" as const } },
+  }), [settings.currency]);
+
+  const navFromSection: Record<string, string> = {
+    "sec-form":  "dashboard",
+    "sec-cats":  "analytics",
+    "sec-month": "analytics",
+    "sec-chart": "analytics",
+    "sec-list":  "expenses",
+    "sec-year":  "summary",
+  };
+  // dashboard icon is active only when truly at the top (before any section)
+  const activeNav = atTop ? "dashboard" : (navFromSection[activeSection] || "dashboard");
+
+  function updateLimit(v: string) {
+    if (v === "") { setSettings(s=>({...s, monthlyLimit:null})); setSettingsErrors(e=>{const n={...e}; delete n.limit; return n;}); return; }
+    const n = parseFloat(v);
+    const errs: Record<string,string> = { ...settingsErrors };
+    delete errs.limit;
+    if (isNaN(n)) errs.limit = "Enter a valid number";
+    else if (n < 0) errs.limit = "Limit cannot be negative";
+    else if (n > 1_000_000_000) errs.limit = "Limit looks too large";
+    setSettingsErrors(errs);
+    if (!errs.limit) setSettings(s=>({...s, monthlyLimit: n}));
+  }
+
+  function updateCurrency(v: string) {
+    const trimmed = v.slice(0, 4);
+    const errs: Record<string,string> = { ...settingsErrors };
+    if (!trimmed.trim()) errs.currency = "Currency is required";
+    else delete errs.currency;
+    setSettingsErrors(errs);
+    setSettings(s=>({...s, currency: trimmed}));
+  }
+
+  function scrollTo(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function clearAll() {
+    if (!confirm("Delete ALL expenses and reset settings? This cannot be undone.")) return;
+    setItems([]); resetForm();
+    showToast("All data cleared");
+  }
+
+  function downloadAllExpenses() {
+    if (items.length === 0) { showToast("No expenses to export"); return; }
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) {
+      showToast("PDF export unavailable");
+      return;
+    }
+
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const margin = 40;
+    let y = margin;
+    const lineHeight = 18;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const usableWidth = pageWidth - margin * 2;
+
+    doc.setFontSize(16);
+    doc.text("ExpenseLog Export", margin, y);
+    y += lineHeight * 1.8;
+
+    doc.setFontSize(10);
+    doc.text(`Date: ${todayStr()}`, margin, y);
+    y += lineHeight * 1.2;
+    doc.text(`Total items: ${items.length}`, margin, y);
+    y += lineHeight * 1.8;
+
+    const rows = [...items]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(it => [it.date, it.title, it.category, `${settings.currency}${it.amount.toFixed(2)}`, it.notes || ""]);
+
+    const columns = ["Date", "Title", "Category", "Amount", "Notes"];
+    const colWidths = [70, 160, 90, 70, usableWidth - 70 - 160 - 90 - 70];
+
+    function drawRow(cells: string[], isHeader = false) {
+      let x = margin;
+      if (isHeader) {
+        doc.setFont(undefined, "bold");
+      } else {
+        doc.setFont(undefined, "normal");
+      }
+      cells.forEach((text, idx) => {
+        const width = colWidths[idx];
+        const splitText = doc.splitTextToSize(text, width - 6);
+        doc.text(splitText, x + 3, y);
+        x += width;
+      });
+      y += lineHeight * Math.max(1, doc.splitTextToSize(cells.join(" "), usableWidth).length);
+      if (y > doc.internal.pageSize.getHeight() - margin) {
+        doc.addPage();
+        y = margin;
+      }
+    }
+
+    drawRow(columns, true);
+    y += 4;
+
+    rows.forEach(row => {
+      if (y > doc.internal.pageSize.getHeight() - margin - lineHeight * 3) {
+        doc.addPage();
+        y = margin;
+      }
+      drawRow(row);
+    });
+
+    doc.save(`expenselog_export_${todayStr()}.pdf`);
+    showToast("Expenses exported as PDF");
+  }
+
+  const activeRangeLabel = rangePreset === "custom"
+    ? (fromDate || toDate ? `${fromDate || "…"} → ${toDate || "…"}` : "Custom")
+    : RANGE_PRESETS.find(r => r.id === rangePreset)?.label || "All Time";
+
+  const visibleMonths = QUARTERS.find(q => q.id === quarterTab)?.months || [];
+
+  return (
+    <div className="min-h-screen w-full p-4 md:p-8">
+      <div className="neu rounded-[28px] mx-auto max-w-[1280px] relative overflow-visible">
+        <div className="flex">
+          {/* Left icon sidebar */}
+          <aside className="hidden md:flex sticky top-8 self-start ml-[-26px] mt-10 mb-10 z-10">
+            <div className="neu-dark rounded-[26px] py-4 px-2 flex flex-col items-center gap-2">
+              <button className={`nav-item ${activeNav==="dashboard"?"active":""}`} title="Dashboard" onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+              </button>
+              <button className={`nav-item ${activeNav==="analytics"?"active":""}`} title="Analytics — jump to chart" onClick={()=>scrollTo("sec-chart")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+              </button>
+              <button className={`nav-item ${activeNav==="expenses"?"active":""}`} title="Expenses — jump to list" onClick={()=>scrollTo("sec-list")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3.5"/></svg>
+              </button>
+              <button className={`nav-item ${activeNav==="summary"?"active":""}`} title="Summary — jump to yearly view" onClick={()=>scrollTo("sec-year")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4M7 13h2M11 13h2M15 13h2M7 17h2M11 17h2"/></svg>
+              </button>
+              <div className="mt-2 pt-3 border-t border-white/10 w-8"></div>
+              <button className="nav-item nav-danger" title="Clear all data (log out)" onClick={clearAll}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M10 11v6M14 11v6"/></svg>
+              </button>
+            </div>
+          </aside>
+
+          <main className="flex-1 px-6 md:px-12 py-10 md:py-12 min-w-0">
+            {/* Top bar */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-baseline gap-2 mr-auto">
+                <span className="text-[22px] font-semibold tracking-tight">Expense<span style={{color:"var(--accent)"}}>Log</span></span>
+                <span className="hidden lg:inline text-xs" style={{color:"var(--hint)"}}>a quiet ledger</span>
+              </div>
+
+              <label className="neu-pill rounded-full h-11 px-4 flex items-center gap-3 w-full sm:w-[320px] cursor-text">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{color:"var(--secondary)", flexShrink:0}}><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                <input value={search} onChange={e=>setSearch(e.target.value)} type="search" placeholder="Search expenses…" className="text-sm placeholder:text-[var(--hint)]" style={{flex:1, minWidth:0, background:"transparent", border:0, outline:"none", padding:0}} />
+                {search && <button type="button" onClick={(e)=>{e.preventDefault(); setSearch("");}} className="text-[var(--hint)] hover:text-[var(--secondary)] text-base leading-none">×</button>}
+              </label>
+
+              <div className="flex items-center gap-3">
+                <button onClick={downloadAllExpenses} className="neu-soft w-11 h-11 rounded-full flex items-center justify-center icon-tap" style={{color:"var(--secondary)"}} title="Download all expenses (PDF)">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3v12"/><path d="m7.5 11 4.5 4.5L16.5 11"/><path d="M4 20.5h16"/></svg>
+                </button>
+                <button onClick={()=>setOpenPanel(openPanel==="notifications"?null:"notifications")} className="neu-soft w-11 h-11 rounded-full flex items-center justify-center icon-tap relative" style={{color:"var(--secondary)"}} title="Notifications">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9zM10 21a2 2 0 0 0 4 0"/></svg>
+                  {overLimit && <span className="absolute top-2 right-2 w-2 h-2 rounded-full" style={{background:"var(--danger)"}}></span>}
+                </button>
+                <button onClick={()=>setOpenPanel(openPanel==="settings"?null:"settings")} className="neu-soft w-11 h-11 rounded-full flex items-center justify-center icon-tap" style={{color:"var(--secondary)"}} title="Settings">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Top bar panels */}
+            {openPanel && (
+              <div className="mt-4 neu-soft rounded-[18px] p-5 relative">
+                <button onClick={()=>setOpenPanel(null)} className="absolute top-3 right-3 text-[var(--hint)] hover:text-[var(--primary)] text-lg">×</button>
+                {openPanel === "settings" && (
+                  <div className="flex flex-col gap-4">
+                    <h3 className="font-semibold">Settings</h3>
+                    <div className="flex items-start gap-3 flex-wrap">
+                      <label className="text-sm text-[var(--secondary)] pt-2">Currency symbol</label>
+                      <div className="flex flex-col gap-1">
+                        <input value={settings.currency} onChange={e=>updateCurrency(e.target.value)} maxLength={4} className="field !h-9 !w-24" />
+                        {settingsErrors.currency && <p className="text-[12px]" style={{color:"var(--danger)"}}>{settingsErrors.currency}</p>}
+                      </div>
+                      <div className="flex gap-1 pt-1 flex-wrap">
+                        {["PKR","$","€","£","¥","₹"].map(c=>(
+                          <button key={c} type="button" onClick={()=>{setSettings(s=>({...s,currency:c})); setSettingsErrors(er=>{const n={...er}; delete n.currency; return n;});}} className="neu-pill h-8 px-3 rounded-full text-xs">{c}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <button onClick={clearAll} className="neu-soft h-10 px-4 rounded-full text-sm self-start" style={{color:"var(--danger)"}}>Clear all saved data</button>
+                  </div>
+                )}
+                {openPanel === "notifications" && (
+                  <div className="flex flex-col gap-3">
+                    <h3 className="font-semibold">Spending alerts</h3>
+                    <div className="flex items-start gap-3 flex-wrap">
+                      <label className="text-sm text-[var(--secondary)] pt-2">Monthly limit ({settings.currency})</label>
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number" min={0} step="0.01"
+                          value={settings.monthlyLimit ?? ""}
+                          onChange={e=>updateLimit(e.target.value)}
+                          onKeyDown={e=>{ if (e.key==='-' || e.key==='e' || e.key==='E') e.preventDefault(); }}
+                          className="field !h-9 !w-40 font-mono" placeholder="e.g. 1000"
+                        />
+                        {settingsErrors.limit && <p className="text-[12px]" style={{color:"var(--danger)"}}>{settingsErrors.limit}</p>}
+                      </div>
+                      {settings.monthlyLimit != null && (
+                        <button type="button" onClick={()=>{setSettings(s=>({...s,monthlyLimit:null})); setSettingsErrors({});}} className="text-xs text-[var(--hint)] hover:text-[var(--secondary)] pt-2">Clear</button>
+                      )}
+                    </div>
+                    {settings.monthlyLimit != null && (
+                      <div className={`text-sm ${overLimit ? "" : "text-[var(--secondary)]"}`} style={overLimit?{color:"var(--danger)"}:undefined}>
+                        {overLimit
+                          ? `⚠ You've spent ${cur(monthInfo.total)} this month — over your ${cur(settings.monthlyLimit)} limit.`
+                          : `You've spent ${cur(monthInfo.total)} of ${cur(settings.monthlyLimit)} this month.`}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Hero */}
+            <div className="mt-10">
+              <h1 className="text-[42px] md:text-[52px] leading-[1.05] tracking-tight font-semibold">
+                Welcome back, <span style={{color:"var(--hint)"}}>friend.</span>
+              </h1>
+              <p className="mt-3 text-[15px] max-w-xl" style={{color:"var(--secondary)"}}>
+                Here is what your spending looks like — quietly observed, carefully kept.
+              </p>
+            </div>
+
+            {/* Range chips */}
+            <div className="mt-8 flex items-center gap-2 flex-wrap">
+              {RANGE_PRESETS.map(p => {
+                const active = rangePreset === p.id;
+                return (
+                  <button key={p.id} onClick={()=>applyPreset(p.id)}
+                    className={`h-10 px-5 rounded-full text-sm transition ${active ? "neu-inset" : "neu-pill"}`}
+                    style={active ? {color: "var(--accent)", fontWeight: 600} : {color: "var(--secondary)"}}>
+                    {p.label}
+                  </button>
+                );
+              })}
+              <button
+                onClick={()=>setShowCustomRange(v=>!v)}
+                className={`w-10 h-10 rounded-full flex items-center justify-center ${showCustomRange || rangePreset === "custom" ? "neu-inset" : "neu-pill"}`}
+                style={{color: rangePreset === "custom" ? "var(--accent)" : "var(--secondary)"}}
+                title="Custom date range"
+                aria-label="Custom date range"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>
+              </button>
+              {rangePreset === "custom" && (
+                <span className="text-[12px] font-mono ml-1" style={{color:"var(--hint)"}}>{activeRangeLabel}</span>
+              )}
+            </div>
+
+            {showCustomRange && (
+              <div className="mt-3 neu-soft rounded-[18px] p-4 flex items-center gap-3 flex-wrap">
+                <div className="neu-pill rounded-full h-10 px-4 flex items-center gap-2">
+                  <span className="text-[11px] uppercase tracking-[0.12em]" style={{color:"var(--hint)"}}>From</span>
+                  <input type="date" value={fromDate} onChange={e=>applyCustom(e.target.value, toDate)} className="text-sm bg-transparent" />
+                </div>
+                <div className="neu-pill rounded-full h-10 px-4 flex items-center gap-2">
+                  <span className="text-[11px] uppercase tracking-[0.12em]" style={{color:"var(--hint)"}}>To</span>
+                  <input type="date" value={toDate} onChange={e=>applyCustom(fromDate, e.target.value)} className="text-sm bg-transparent" />
+                </div>
+                {(fromDate || toDate) && (
+                  <button onClick={()=>applyPreset("all")} className="neu-soft h-10 px-4 rounded-full text-sm">Clear</button>
+                )}
+              </div>
+            )}
+
+            {/* Top grid: form + right column */}
+            <section className="mt-8 grid gap-6 lg:grid-cols-[360px_1fr] items-start">
+
+              {/* Sticky form */}
+              <aside id="sec-form" className="neu rounded-[22px] p-7 lg:sticky lg:top-8 scroll-mt-24">
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-base font-semibold tracking-tight">{fId ? "Edit expense" : "Add expense"}</h2>
+                  <span className="text-[11px] uppercase tracking-[0.14em]" style={{color:"var(--hint)"}}>Ledger</span>
+                </div>
+                <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
+                  <div>
+                    <label className="block text-[12px] mb-1.5" style={{color:"var(--secondary)"}}>Title</label>
+                    <input value={fTitle} onChange={e=>setFTitle(e.target.value)} maxLength={80} type="text" className="field" placeholder="e.g. Dinner with friends" />
+                    {errors.title && <p className="text-[12px] mt-1.5" style={{color:"var(--danger)"}}>{errors.title}</p>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[12px] mb-1.5" style={{color:"var(--secondary)"}}>Amount</label>
+                      <input value={fAmount} onChange={e=>setFAmount(e.target.value.replace(/-/g, ""))} type="number" min="0.01" step="0.01" className="field font-mono" placeholder="0.00" onKeyDown={e=>{ if (e.key==='-' || e.key==='e' || e.key==='E' || e.key==='+') e.preventDefault(); }} />
+                      {errors.amount && <p className="text-[12px] mt-1.5" style={{color:"var(--danger)"}}>{errors.amount}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-[12px] mb-1.5" style={{color:"var(--secondary)"}}>Date</label>
+                      <input value={fDate} onChange={e=>setFDate(e.target.value)} type="date" className="field" />
+                      {errors.date && <p className="text-[12px] mt-1.5" style={{color:"var(--danger)"}}>{errors.date}</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[12px] mb-1.5" style={{color:"var(--secondary)"}}>Category</label>
+                    <select value={fCategory} onChange={e=>setFCategory(e.target.value as Cat)} className="field appearance-none">
+                      <option value="">Choose category…</option>
+                      {CATS.map(c=> <option key={c} value={c}>{CAT_META[c].icon} {c}</option>)}
+                    </select>
+                    {errors.category && <p className="text-[12px] mt-1.5" style={{color:"var(--danger)"}}>{errors.category}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-[12px] mb-1.5" style={{color:"var(--secondary)"}}>Notes <span style={{color:"var(--hint)"}}>(optional)</span></label>
+                    <textarea value={fNotes} onChange={e=>setFNotes(e.target.value)} maxLength={300} rows={2} className="field" placeholder="A short note…" />
+                    {errors.notes && <p className="text-[12px] mt-1.5" style={{color:"var(--danger)"}}>{errors.notes}</p>}
+                  </div>
+                  <div className="flex gap-3 pt-1">
+                    <button type="submit" className="flex-1 h-11 rounded-[14px] text-sm font-medium text-white" style={{background:"#1F1F1D", boxShadow:"4px 4px 10px var(--nm-dark), -4px -4px 10px var(--nm-light)"}}>
+                      {fId ? "Save changes" : "Save expense"}
+                    </button>
+                    {fId && (
+                      <button type="button" onClick={resetForm} className="flex-1 h-11 rounded-[14px] text-sm font-medium neu-soft" style={{color:"var(--secondary)"}}>Cancel</button>
+                    )}
+                  </div>
+                </form>
+              </aside>
+
+              <div className="flex flex-col gap-6 min-w-0">
+                {/* Category Breakdown — grid of cards */}
+                <div id="sec-cats" className="neu rounded-[22px] p-7 scroll-mt-24">
+                  <div className="flex items-baseline justify-between mb-6 gap-4 flex-wrap">
+                    <div>
+                      <h3 className="text-lg font-semibold tracking-tight">Category Breakdown</h3>
+                      <p className="text-[13px] mt-1" style={{color:"var(--secondary)"}}>Where your money has been quietly going · <span style={{color:"var(--accent)"}}>{activeRangeLabel}</span></p>
+                    </div>
+                    <div className="text-[12px] font-mono" style={{color:"var(--secondary)"}}>Total {cur(total)}</div>
+                  </div>
+                  {total === 0 ? (
+                    <p className="text-sm" style={{color:"var(--hint)"}}>No expenses in this range — add one or widen the filter.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {CATS.filter(c => byCat[c].total > 0).map(c => {
+                        const pct = total ? (byCat[c].total / total) * 100 : 0;
+                        const r = 18, C = 2 * Math.PI * r;
+                        const off = C - (pct/100) * C;
+                        return (
+                          <div key={c} className="neu-soft rounded-[18px] p-4 flex items-center gap-4">
+                            <div className="w-11 h-11 rounded-full neu-pill flex items-center justify-center text-lg shrink-0" style={{color: CAT_META[c].color}}>
+                              {CAT_META[c].icon}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">{c}</div>
+                              <div className="text-[18px] font-mono font-semibold truncate">{cur(byCat[c].total)}</div>
+                              <div className="text-[11px]" style={{color:"var(--hint)"}}>{byCat[c].count} entr{byCat[c].count===1?"y":"ies"}</div>
+                            </div>
+                            <svg width="44" height="44" viewBox="0 0 44 44" className="shrink-0">
+                              <circle cx="22" cy="22" r={r} fill="none" stroke="var(--border-soft)" strokeWidth="4"/>
+                              <circle cx="22" cy="22" r={r} fill="none" stroke={CAT_META[c].color} strokeWidth="4"
+                                strokeDasharray={C} strokeDashoffset={off} strokeLinecap="round"
+                                transform="rotate(-90 22 22)"/>
+                              <text x="22" y="25" textAnchor="middle" fontSize="9" fill="var(--secondary)" fontFamily="monospace">{Math.round(pct)}%</text>
+                            </svg>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* This Month + Quote row */}
+                <div id="sec-month" className="grid gap-4 md:grid-cols-[1fr_1fr] scroll-mt-24">
+                  <div className="neu rounded-[22px] p-6">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[11px] uppercase tracking-[0.14em]" style={{color:"var(--hint)"}}>This Month</div>
+                      <div className="text-[13px] font-medium">{monthInfo.label}</div>
+                    </div>
+                    <div className="mt-4 text-[34px] font-semibold font-mono tracking-tight">{cur(monthInfo.total)}</div>
+                    <div className="mt-1 text-[13px]" style={{color:"var(--secondary)"}}>
+                      {monthInfo.count} {monthInfo.count===1?"entry":"entries"}
+                    </div>
+                    {/* Sparkline trend */}
+                    <div className="mt-4 h-[90px]">
+                      <Line data={trendData} options={trendOptions} />
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-[var(--border-soft)] text-[13px] flex items-center justify-between gap-2">
+                      <span style={{color:"var(--secondary)"}}>vs last month ({cur(monthInfo.prevTotal)})</span>
+                      {monthInfo.diff == null ? (
+                        <span style={{color:"var(--hint)"}}>—</span>
+                      ) : (
+                        <span style={{color: monthInfo.diff > 0 ? "var(--danger)" : "var(--accent)"}} className="font-mono font-medium">
+                          {monthInfo.diff > 0 ? "▲" : "▼"} {Math.abs(monthInfo.diff).toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                    {settings.monthlyLimit != null && (
+                      <div className="mt-2 text-[12px]" style={{color: overLimit ? "var(--danger)" : "var(--hint)"}}>
+                        {overLimit ? "Over" : "Within"} {cur(settings.monthlyLimit)} limit
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quote card */}
+                  <div className="neu rounded-[22px] p-6 flex flex-col justify-between min-h-[180px]" style={{background:"linear-gradient(135deg, var(--accent-light), var(--bg))"}}>
+                    <div className="text-[11px] uppercase tracking-[0.14em]" style={{color:"var(--accent)"}}>Mindset</div>
+                    <div className="text-[20px] leading-snug font-medium italic" style={{fontFamily:'"Instrument Serif", Georgia, serif'}}>
+                      “{quote}”
+                    </div>
+                    <div className="text-[12px]" style={{color:"var(--secondary)"}}>— your quiet ledger</div>
+                  </div>
+                </div>
+
+                {/* Chart — donut only */}
+                <div id="sec-chart" className="neu rounded-[22px] p-7 scroll-mt-24">
+                  <div className="flex items-baseline justify-between mb-4 gap-3 flex-wrap">
+                    <div>
+                      <h3 className="text-lg font-semibold tracking-tight">Spending Distribution</h3>
+                      <p className="text-[13px] mt-1" style={{color:"var(--secondary)"}}>Donut of category-wise spending · <span style={{color:"var(--accent)"}}>{activeRangeLabel}</span></p>
+                    </div>
+                  </div>
+                  {donutCats.length === 0 ? (
+                    <p className="text-sm py-8 text-center" style={{color:"var(--hint)"}}>No expenses in this range to chart.</p>
+                  ) : (
+                    <div className="relative h-[300px] flex items-center justify-center">
+                      <Doughnut data={donutData} options={donutOptions} />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{marginBottom:60}}>
+                        <div className="text-[11px] uppercase tracking-[0.14em]" style={{color:"var(--hint)"}}>Total</div>
+                        <div className="text-[26px] font-mono font-semibold">{cur(total)}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Expense list */}
+            <section id="sec-list" className="mt-14 scroll-mt-24">
+              <div className="flex items-end justify-between gap-4 flex-wrap mb-5">
+                <div>
+                  <h2 className="text-[28px] font-semibold tracking-tight">Recent Expenses</h2>
+                  <p className="text-sm mt-1" style={{color:"var(--secondary)"}}>
+                    {filtered.length} of {items.length} {items.length===1?"entry":"entries"} · <span style={{color:"var(--accent)"}}>{activeRangeLabel}</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="neu-pill rounded-full h-10 px-4 flex items-center">
+                    <select value={filterCat} onChange={e=>setFilterCat(e.target.value as Cat | "")} className="bare text-sm" style={{color:"var(--secondary)"}}>
+                      <option value="">All categories</option>
+                      {CATS.map(c=> <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  {(filterCat || search) && (
+                    <button onClick={()=>{setFilterCat("");setSearch("");}} className="h-10 px-4 rounded-full text-sm neu-soft" style={{color:"var(--secondary)"}}>Clear ×</button>
+                  )}
+                </div>
+              </div>
+
+              {items.length === 0 ? (
+                <div className="neu-soft rounded-[18px] p-10 text-center">
+                  <div className="text-4xl mb-3">🪶</div>
+                  <p className="font-medium">No expenses yet</p>
+                  <p className="text-sm mt-1" style={{color:"var(--secondary)"}}>Add your first one using the form on the left.</p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="neu-soft rounded-[18px] p-8 text-center text-sm" style={{color:"var(--secondary)"}}>
+                  No expenses match your filters.
+                </div>
+              ) : (
+                <>
+                  {/* Desktop table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full border-collapse min-w-[640px]">
+                      <thead>
+                        <tr className="text-left border-b" style={{borderColor:"var(--border)"}}>
+                          <th className="py-3 pr-4 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{color:"var(--secondary)"}}>Date</th>
+                          <th className="py-3 pr-4 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{color:"var(--secondary)"}}>Title</th>
+                          <th className="py-3 pr-4 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{color:"var(--secondary)"}}>Category</th>
+                          <th className="py-3 pr-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-right" style={{color:"var(--secondary)"}}>Amount</th>
+                          <th className="py-3 pr-4 text-[11px] font-semibold uppercase tracking-[0.12em] hidden lg:table-cell" style={{color:"var(--secondary)"}}>Notes</th>
+                          <th className="py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-right" style={{color:"var(--secondary)"}}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map(it => (
+                          <tr key={it.id} className="border-b" style={{borderColor:"var(--border-soft)"}}>
+                            <td className="py-3 pr-4 text-sm font-mono" style={{color:"var(--secondary)"}}>{it.date}</td>
+                            <td className="py-3 pr-4 text-sm font-medium">{it.title}</td>
+                            <td className="py-3 pr-4 text-sm">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full neu-pill text-[12px]" style={{color: CAT_META[it.category].color}}>
+                                <span>{CAT_META[it.category].icon}</span>{it.category}
+                              </span>
+                            </td>
+                            <td className="py-3 pr-4 text-sm font-mono font-medium text-right">{cur(it.amount)}</td>
+                            <td className="py-3 pr-4 text-sm hidden lg:table-cell truncate max-w-[200px]" style={{color:"var(--secondary)"}}>{it.notes || "—"}</td>
+                            <td className="py-3 text-right whitespace-nowrap">
+                              <button onClick={()=>editItem(it)} className="icon-btn edit" title="Edit">✎</button>
+                              <button onClick={()=>delItem(it.id)} className="icon-btn del" title="Delete">🗑</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Mobile cards */}
+                  <div className="md:hidden flex flex-col gap-3">
+                    {filtered.map(it => (
+                      <div key={it.id} className="neu-soft rounded-[16px] p-4 flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full neu-pill flex items-center justify-center shrink-0" style={{color: CAT_META[it.category].color}}>
+                          {CAT_META[it.category].icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <div className="text-sm font-medium truncate">{it.title}</div>
+                            <div className="text-sm font-mono font-semibold">{cur(it.amount)}</div>
+                          </div>
+                          <div className="text-[12px] mt-0.5" style={{color:"var(--hint)"}}>{it.date} · {it.category}</div>
+                          {it.notes && <div className="text-[12px] mt-1" style={{color:"var(--secondary)"}}>{it.notes}</div>}
+                          <div className="mt-2 flex gap-1">
+                            <button onClick={()=>editItem(it)} className="icon-btn edit" title="Edit">✎</button>
+                            <button onClick={()=>delItem(it.id)} className="icon-btn del" title="Delete">🗑</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+
+            {/* Yearly Summary */}
+            <section id="sec-year" className="mt-16 scroll-mt-24">
+              <div className="flex items-end justify-between gap-4 flex-wrap mb-5">
+                <div>
+                  <h2 className="text-[28px] font-semibold tracking-tight">Yearly Summary</h2>
+                  <p className="text-sm mt-1" style={{color:"var(--secondary)"}}>
+                    Month-by-month look at {new Date().getFullYear()}.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {QUARTERS.map(q => {
+                    const active = quarterTab === q.id;
+                    return (
+                      <button key={q.id} onClick={()=>setQuarterTab(q.id)}
+                        className={`h-9 px-4 rounded-full text-[13px] transition ${active ? "neu-inset" : "neu-pill"}`}
+                        style={active ? {color: "var(--accent)", fontWeight: 600} : {color: "var(--secondary)"}}>
+                        {q.id}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {yearSummary.filter(m => visibleMonths.includes(m.idx)).map(m => {
+                  const empty = m.count === 0;
+                  return (
+                    <div key={m.idx} className="neu-soft rounded-[18px] p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold tracking-tight">{m.name}</div>
+                        <div className="text-[10px] uppercase tracking-[0.14em]" style={{color:"var(--hint)"}}>{new Date().getFullYear()}</div>
+                      </div>
+                      <div className={`mt-3 text-[22px] font-mono font-semibold tracking-tight ${empty ? "" : ""}`} style={empty ? {color:"var(--hint)"} : undefined}>
+                        {cur(m.total)}
+                      </div>
+                      <div className="text-[12px] mt-1" style={{color:"var(--secondary)"}}>
+                        {m.count} {m.count===1?"entry":"entries"}
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-[var(--border-soft)] text-[12px] flex items-center gap-2">
+                        {m.topCat ? (
+                          <>
+                            <span className="w-6 h-6 rounded-full neu-pill flex items-center justify-center text-[12px]" style={{color: CAT_META[m.topCat].color}}>
+                              {CAT_META[m.topCat].icon}
+                            </span>
+                            <span style={{color:"var(--secondary)"}}>Top: <span style={{color: CAT_META[m.topCat].color, fontWeight: 500}}>{m.topCat}</span></span>
+                          </>
+                        ) : (
+                          <span style={{color:"var(--hint)"}}>No spending yet</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <footer className="mt-14 mb-2 text-[12px] text-center" style={{color:"var(--hint)"}}>
+              ExpenseLog — local-only. Your ledger never leaves this browser.
+            </footer>
+          </main>
+
+          {/* Right section navigator */}
+          <nav aria-label="Section navigator" className="hidden lg:flex sticky top-1/2 self-start mr-[-12px] z-10 flex-col gap-3 items-end pr-2" style={{transform:"translateY(-50%)", marginTop:"40vh"}}>
+            {SECTIONS.map(s => (
+              <button key={s.id}
+                onClick={()=>scrollTo(s.id)}
+                className={`sec-dash ${activeSection===s.id?"active":""}`}
+                title={s.label}
+                aria-label={s.label}
+              />
+            ))}
+          </nav>
+        </div>
+      </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 neu-soft rounded-full px-5 h-11 flex items-center text-sm z-50">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(Page));
+
+</script>
+<script>
+(function(){
+  var src = document.getElementById("src-tsx").textContent;
+  var out = Babel.transform(src, { filename: "app.tsx", presets: [["react", {runtime:"classic"}], "typescript"] }).code;
+  var s = document.createElement("script");
+  try{(0,eval)(out);}catch(e){console.error("RUNERR",e,e.stack);} return;
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>
