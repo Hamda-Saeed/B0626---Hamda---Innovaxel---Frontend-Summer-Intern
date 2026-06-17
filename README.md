@@ -1,7 +1,7 @@
 # ExpenseLog — Personal Expense Tracking Service
 
 <p align="center">
-  <img src="./assets/expense-log-cover.png" alt="ExpenseLog Dashboard Preview" width="900"/>
+  <img src="./assests/expense-log-cover.png" alt="ExpenseLog Dashboard Preview" width="900"/>
 </p>
 
 <h3 align="center">
@@ -223,4 +223,4 @@ This prevents incorrect data entry and improves reliability.
 
 ---
 
-# 📂 Project Structure
+
